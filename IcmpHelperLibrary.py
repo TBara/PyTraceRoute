@@ -7,6 +7,7 @@ from socket import *
 import struct
 import time
 import select
+from statistics import mean
 
 
 # #################################################################################################################### #
@@ -36,6 +37,7 @@ class IcmpHelperLibrary:
         __packetIdentifier = 0          # Valid values are 0-65535 (unsigned short, 16 bits)
         __packetSequenceNumber = 0      # Valid values are 0-65535 (unsigned short, 16 bits)
         __ipTimeout = 30
+        __rtt = 0
 
         __DEBUG_IcmpPacket = False      # Allows for debug output
 
@@ -64,6 +66,8 @@ class IcmpHelperLibrary:
         def getPacketSequenceNumber(self):
             return self.__packetSequenceNumber
 
+        def getRtt(self):
+            return self.__rtt
         # ############################################################################################################ #
         # IcmpPacket Class Setters                                                                                     #
         #                                                                                                              #
@@ -90,6 +94,8 @@ class IcmpHelperLibrary:
         def setPacketSequenceNumber(self, sequenceNumber):
             self.__packetSequenceNumber = sequenceNumber
 
+        def setRTT(self, rtt):
+            self.__rtt = rtt
         # ############################################################################################################ #
         # IcmpPacket Class Private Functions                                                                           #
         #                                                                                                              #
@@ -237,6 +243,8 @@ class IcmpHelperLibrary:
                 recvPacket, addr = mySocket.recvfrom(1024)  # recvPacket - bytes object representing data received
                 # addr  - address of socket sending data
                 timeReceived = time.time()
+                # Capture RTT
+                self.__rtt = (timeReceived - pingStartTime) * 1000
                 timeLeft = timeLeft - howLongInSelect
                 if timeLeft <= 0:
                     print("  *        *        *        *        *    Request timed out.")
@@ -255,6 +263,15 @@ class IcmpHelperLibrary:
                                     addr[0]
                                 )
                               )
+                        code_msg = ''
+                        if icmpCode == 0:
+                            code_msg = 'Time to Live exceeded in Transit'
+                        elif icmpCode == 1:
+                            code_msg = 'Fragment Reassembly Time Exceeded'
+                        else:
+                            code_msg = 'Unkown code'
+
+                        print(code_msg)
 
                     elif icmpType == 3:                         # Destination Unreachable
                         print("  TTL=%d    RTT=%.0f ms    Type=%d    Code=%d    %s" %
@@ -266,12 +283,49 @@ class IcmpHelperLibrary:
                                       addr[0]
                                   )
                               )
+                        code_msg = ''
+                        if icmpCode == 0:
+                            code_msg = 'Net Unreachable'
+                        elif icmpCode == 1:
+                            code_msg = 'Host Unreachable'
+                        elif icmpCode == 2:
+                            code_msg = 'Protocol Unreachable'
+                        elif icmpCode == 3:
+                            code_msg = 'Port Unreachable'
+                        elif icmpCode == 4:
+                            code_msg = 'Fragmentation Needed and Don\'t Fragment was Set'
+                        elif icmpCode == 5:
+                            code_msg = 'Source Route Failed'
+                        elif icmpCode == 6:
+                            code_msg = 'Destination Network Unknown'
+                        elif icmpCode == 7:
+                            code_msg = 'Destination Host Unknown'
+                        elif icmpCode == 8:
+                            code_msg = 'Source Host Isolated'
+                        elif icmpCode == 9:
+                            code_msg = 'Communication with Destination Network is Administratively Prohibited'
+                        elif icmpCode == 10:
+                            code_msg = 'Communication with Destination Host is Administratively Prohibited'
+                        elif icmpCode == 11:
+                            code_msg = 'Destination Network Unreachable for Type of Service'
+                        elif icmpCode == 12:
+                            code_msg = 'Destination Host Unreachable for Type of Service'
+                        elif icmpCode == 13:
+                            code_msg = 'Communication Administratively Prohibited'
+                        elif icmpCode == 14:
+                            code_msg = 'Host Precedence Violation'
+                        elif icmpCode == 15:
+                            code_msg = 'Precedence cutoff in effect'
+                        else:
+                            code_msg = 'Unknown code'
+                        
+                        print(f"Code: {code_msg}")
 
                     elif icmpType == 0:                         # Echo Reply
                         icmpReplyPacket = IcmpHelperLibrary.IcmpPacket_EchoReply(recvPacket)
                         self.__validateIcmpReplyPacketWithOriginalPingData(icmpReplyPacket)
                         icmpReplyPacket.printResultToConsole(ttl, timeReceived, addr)
-                        return      # Echo reply is the end and therefore should return
+                        return True    # Echo reply is the end and therefore should return
 
                     else:
                         print("error")
@@ -393,7 +447,7 @@ class IcmpHelperLibrary:
 
         # ############################################################################################################ #
         # IcmpPacket_EchoReply Public Functions                                                                        #
-######### ############################################################################################################ #
+        # ############################################################################################################ #
         def printResultToConsole(self, ttl, timeReceived, addr):
             for msg in self.getMessages():
                 print(msg)
@@ -427,28 +481,44 @@ class IcmpHelperLibrary:
     def __sendIcmpEchoRequest(self, host):
         print("sendIcmpEchoRequest Started...") if self.__DEBUG_IcmpHelperLibrary else 0
 
+        # Collecct statistics
+        packets_sent = 0
+        packets_rcvd = 0
+        rtts = []
         for i in range(4):
             # Build packet
             icmpPacket = IcmpHelperLibrary.IcmpPacket()
-
             randomIdentifier = (os.getpid() & 0xffff)      # Get as 16 bit number - Limit based on ICMP header standards
                                                            # Some PIDs are larger than 16 bit
-
             packetIdentifier = randomIdentifier
             packetSequenceNumber = i
 
             icmpPacket.buildPacket_echoRequest(packetIdentifier, packetSequenceNumber)  # Build ICMP for IP payload
             icmpPacket.setIcmpTarget(host)
-            icmpPacket.sendEchoRequest()                                                # Build IP
+            packets_sent += 1
+            if icmpPacket.sendEchoRequest():                                                # Build IP
+                packets_rcvd += 1
+            rtts.append(icmpPacket._IcmpPacket__rtt)
 
             # icmpPacket.printIcmpPacketHeader_hex() if self.__DEBUG_IcmpHelperLibrary else 0
             icmpPacket.printIcmpPacket_hex() if self.__DEBUG_IcmpHelperLibrary else 0
             # we should be confirming values are correct, such as identifier and sequence number and data
+        
+        # Print final statistics to terminal 
+        lost = int(((packets_sent - packets_rcvd)/packets_sent)*100)
+        print(f"Ping statistics for {host}")
+        print(f"\tPackets: Sent = {packets_sent}, Received = {packets_rcvd}, "
+        f"Lost = {packets_sent - packets_rcvd} ({lost}% loss),")
+
+        print("Approximate round trip times in milli-seconds:")
+        print(f"\tMinimum = {int(round(min(rtts), 0))}ms, Maximum = {int(round(max(rtts), 0))}ms, Average = {int(round(mean(rtts), 0))}ms")
+        pass
 
     def __sendIcmpTraceRoute(self, host):
         print("sendIcmpTraceRoute Started...") if self.__DEBUG_IcmpHelperLibrary else 0
-##############################################################################################################
-######### Build code for trace route here
+
+    ##############################################################################################################
+    ######### Build code for trace route here
 
     # ################################################################################################################ #
     # IcmpHelperLibrary Public Functions                                                                               #
