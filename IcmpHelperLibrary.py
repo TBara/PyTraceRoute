@@ -8,6 +8,7 @@ import struct
 import time
 import select
 from statistics import mean
+import sys
 
 
 # #################################################################################################################### #
@@ -333,6 +334,54 @@ class IcmpHelperLibrary:
             finally:
                 mySocket.close()
 
+        def sendTrace(self):
+            print("Tracing route to (" + self.__icmpTarget + ") " + self.__destinationIpAddress)
+            if len(self.__icmpTarget.strip()) <= 0 | len(self.__destinationIpAddress.strip()) <= 0:
+                self.setIcmpTarget("127.0.0.1")
+
+            ttl = 1
+            cnt = 1
+            max_hops = 30
+            dest_reached = False
+            while (not dest_reached) and (cnt <= max_hops):
+                mySocket = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP)
+                mySocket.settimeout(self.__ipTimeout)
+                mySocket.bind(("", 0))
+                mySocket.setsockopt(IPPROTO_IP, IP_TTL, struct.pack('I', ttl))  # Unsigned int - 4 bytes
+                try:
+                    mySocket.sendto(b''.join([self.__header, self.__data]), (self.__destinationIpAddress, 0))
+                    timeLeft = 30
+                    pingStartTime = time.time()
+                    startedSelect = time.time()
+                    whatReady = select.select([mySocket], [], [], timeLeft)
+                    endSelect = time.time()
+                    howLongInSelect = (endSelect - startedSelect)
+                    if whatReady[0] == []:  # Timeout
+                        print("  *        *        *        *        *    Request timed out.")
+                    else:
+                        recvPacket, addr = mySocket.recvfrom(1024)  # recvPacket - bytes object representing data received
+                        timeReceived = time.time()
+                        # Capture RTT
+                        self.__rtt = (timeReceived - pingStartTime) * 1000
+                        timeLeft = timeLeft - howLongInSelect
+                        if timeLeft <= 0:
+                            print("  *        *        *        *        *    Request timed out.")                    
+
+                        else:
+                            host_name = ''
+                            try:
+                                host_name = gethostbyaddr(addr[0])[0]
+                            except:
+                                host_name = addr[0]
+                            print(f"{cnt}    {int(round(self.__rtt, 0))}ms    {addr[0]}  [{host_name}]")
+                            dest_reached = str(addr[0]) == self.__destinationIpAddress
+                            ttl += 1
+                            cnt += 1
+                            pass
+
+                finally:
+                    mySocket.close()
+
         def printIcmpPacketHeader_hex(self):
             print("Header Size: ", len(self.__header))
             for i in range(len(self.__header)):
@@ -516,6 +565,15 @@ class IcmpHelperLibrary:
 
     def __sendIcmpTraceRoute(self, host):
         print("sendIcmpTraceRoute Started...") if self.__DEBUG_IcmpHelperLibrary else 0
+        icmpPacket = IcmpHelperLibrary.IcmpPacket()
+        randomIdentifier = (os.getpid() & 0xffff)      # Get as 16 bit number - Limit based on ICMP header standards
+                                                        # Some PIDs are larger than 16 bit
+        packetIdentifier = randomIdentifier
+        packetSequenceNumber = 1
+
+        icmpPacket.buildPacket_echoRequest(packetIdentifier, packetSequenceNumber)  # Build ICMP for IP payload
+        icmpPacket.setIcmpTarget(host)
+        icmpPacket.sendTrace()                                               # Build IP
 
     ##############################################################################################################
     ######### Build code for trace route here
@@ -540,11 +598,12 @@ def main():
 
 
     # Choose one of the following by uncommenting out the line
-    icmpHelperPing.sendPing("209.233.126.254")
+    # icmpHelperPing.sendPing("209.233.126.254")
     # icmpHelperPing.sendPing("www.google.com")
     # icmpHelperPing.sendPing("oregonstate.edu")
     # icmpHelperPing.sendPing("gaia.cs.umass.edu")
-    # icmpHelperPing.traceRoute("oregonstate.edu")
+    icmpHelperPing.traceRoute("oregonstate.edu")
+    # icmpHelperPing.traceRoute("209.233.126.254")
 
 
 if __name__ == "__main__":
