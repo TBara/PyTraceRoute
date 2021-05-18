@@ -178,7 +178,9 @@ class IcmpHelperLibrary:
             # Get type from reply packet 
             bytes = struct.calcsize("B")        # Format code B is 1 byte
             repl_icmp_type = struct.unpack("!B", repl[20:20 + bytes])[0]
-            icmpReplyPacket.appendMessage(f"Echo reply type({repl_icmp_type}) == 0: {repl_icmp_type == 0}")
+            msg = f"Echo reply type({repl_icmp_type}) == 0: {repl_icmp_type == 0}"
+            print(msg) if self.__DEBUG_IcmpHelperLibrary else 0
+            icmpReplyPacket.appendMessage(msg)
 
             # Get reply code
             repl_icmp_code = struct.unpack("!B", repl[21:21 + bytes])[0]
@@ -188,25 +190,32 @@ class IcmpHelperLibrary:
             bytes = struct.calcsize("H")        # Format code H is 2 bytes
             repl_icmp_id = struct.unpack("!H", repl[24:24 + bytes])[0]
             valid_id = self.getPacketIdentifier() == repl_icmp_id
-            icmpReplyPacket.appendMessage(f"Received id({repl_icmp_id}) == sent id({self.getPacketIdentifier()}): {repl_icmp_id == self.getPacketIdentifier()}")
+            msg = f"Received id({repl_icmp_id}) == sent id({self.getPacketIdentifier()}): {repl_icmp_id == self.getPacketIdentifier()}"
+            print(msg) if self.__DEBUG_IcmpHelperLibrary else 0
+            icmpReplyPacket.appendMessage(msg)
 
             # Decode and compare packet sequene number
             repl_icmp_seq = struct.unpack("!H", repl[26:26 + bytes])[0]
             valid_seq = self.getPacketSequenceNumber() == repl_icmp_seq
-            icmpReplyPacket.appendMessage(f"Received seq({repl_icmp_seq}) == sent seq({self.getPacketSequenceNumber()}): {repl_icmp_seq == self.getPacketSequenceNumber()}")
+            msg = f"Received seq({repl_icmp_seq}) == sent seq({self.getPacketSequenceNumber()}): {repl_icmp_seq == self.getPacketSequenceNumber()}"
+            print(msg) if self.__DEBUG_IcmpHelperLibrary else 0
+            icmpReplyPacket.appendMessage(msg)
 
             # Decode and compare raw data 
             repl_icmp_data = repl[36:].decode('utf-8')
             valid_data = self.getDataRaw() == repl_icmp_data
-            icmpReplyPacket.appendMessage(f"Sent data == received data: {valid_data}")
+            msg = f"Sent data == received data: {valid_data}"
+            print(msg) if self.__DEBUG_IcmpHelperLibrary else 0
+            icmpReplyPacket.appendMessage(msg)
             
             # Set the valid data variable in the IcmpPacket_EchoReply class based the outcome of the data comparison
             if valid_seq and valid_id and valid_data:
                 icmpReplyPacket_status = True 
-            
-            icmpReplyPacket.appendMessage(f"Is packet valid: {icmpReplyPacket_status}")
+            msg = f"Is packet valid: {icmpReplyPacket_status}"
+            print(msg) if self.__DEBUG_IcmpHelperLibrary else 0
+            icmpReplyPacket.appendMessage(msg)
             icmpReplyPacket.setIsValidResponse(icmpReplyPacket_status)
-            pass
+
 
         # ############################################################################################################ #
         # IcmpPacket Class Public Functions                                                                            #
@@ -350,14 +359,15 @@ class IcmpHelperLibrary:
                 mySocket.setsockopt(IPPROTO_IP, IP_TTL, struct.pack('I', ttl))  # Unsigned int - 4 bytes
                 try:
                     mySocket.sendto(b''.join([self.__header, self.__data]), (self.__destinationIpAddress, 0))
-                    timeLeft = 30
+                    timeLeft = 4
                     pingStartTime = time.time()
                     startedSelect = time.time()
                     whatReady = select.select([mySocket], [], [], timeLeft)
                     endSelect = time.time()
                     howLongInSelect = (endSelect - startedSelect)
                     if whatReady[0] == []:  # Timeout
-                        print("  *        *        *        *        *    Request timed out.")
+                        print(f"{cnt}  *        *        *        *        *    Request timed out!")
+                        cnt += 1
                     else:
                         recvPacket, addr = mySocket.recvfrom(1024)  # recvPacket - bytes object representing data received
                         timeReceived = time.time()
@@ -365,7 +375,7 @@ class IcmpHelperLibrary:
                         self.__rtt = (timeReceived - pingStartTime) * 1000
                         timeLeft = timeLeft - howLongInSelect
                         if timeLeft <= 0:
-                            print("  *        *        *        *        *    Request timed out.")                    
+                            print(f"{cnt}  *        *        *        *        *    Request timed out.")                    
 
                         else:
                             host_name = ''
@@ -378,7 +388,8 @@ class IcmpHelperLibrary:
                             ttl += 1
                             cnt += 1
                             pass
-
+                except:
+                    break
                 finally:
                     mySocket.close()
 
@@ -602,6 +613,8 @@ def main():
     # icmpHelperPing.sendPing("www.google.com")
     # icmpHelperPing.sendPing("oregonstate.edu")
     # icmpHelperPing.sendPing("gaia.cs.umass.edu")
+    # icmpHelperPing.traceRoute("gaia.cs.umass.edu")
+    # icmpHelperPing.traceRoute("www.google.com")
     icmpHelperPing.traceRoute("oregonstate.edu")
     # icmpHelperPing.traceRoute("209.233.126.254")
 
