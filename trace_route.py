@@ -22,7 +22,6 @@ class IcmpPacket:
     __packetIdentifier = 0          # Valid values are 0-65535 (unsigned short, 16 bits)
     __packetSequenceNumber = 0      # Valid values are 0-65535 (unsigned short, 16 bits)
     __ipTimeout = 30
-    __rtt = 0
 
 
     # ############################################################################################################ #
@@ -49,8 +48,6 @@ class IcmpPacket:
     def getPacketSequenceNumber(self):
         return self.__packetSequenceNumber
 
-    def getRtt(self):
-        return self.__rtt
     # ############################################################################################################ #
     # IcmpPacket Class Setters                                                                                     #
     # ############################################################################################################ #
@@ -76,8 +73,6 @@ class IcmpPacket:
     def setPacketSequenceNumber(self, sequenceNumber):
         self.__packetSequenceNumber = sequenceNumber
 
-    def setRTT(self, rtt):
-        self.__rtt = rtt
     # ############################################################################################################ #
     # IcmpPacket Class Private Functions                                                                           #
     # ############################################################################################################ #
@@ -170,6 +165,9 @@ class IcmpPacket:
             mySocket.bind(("", 0))
             mySocket.setsockopt(IPPROTO_IP, IP_TTL, struct.pack('I', ttl))  # Unsigned int - 4 bytes
             try:
+                h_len = len(self.__header)
+                d_len = len(self.__data)
+
                 mySocket.sendto(b''.join([self.__header, self.__data]), (self.__destinationIpAddress, 0))
                 timeLeft = 5
                 pingStartTime = time.time()
@@ -184,7 +182,7 @@ class IcmpPacket:
                     recvPacket, addr = mySocket.recvfrom(1024)  # recvPacket - bytes object representing data received
                     timeReceived = time.time()
                     # Capture RTT
-                    self.__rtt = (timeReceived - pingStartTime) * 1000
+                    rtt = (timeReceived - pingStartTime) * 1000
                     timeLeft = timeLeft - howLongInSelect
                     if timeLeft <= 0:
                         print("  *        *        *        *        *    Request timed out.")                    
@@ -195,7 +193,7 @@ class IcmpPacket:
                             host_name = gethostbyaddr(addr[0])[0]
                         except:
                             host_name = addr[0]
-                        print(f"{cnt}    {round(self.__rtt)}ms    {addr[0]}  [{host_name}]")
+                        print(f"{cnt}    {round(rtt)}ms    {addr[0]}  [{host_name}]")
                         dest_reached = str(addr[0]) == self.__destinationIpAddress
                         ttl += 1
                         cnt += 1
@@ -207,8 +205,8 @@ class IcmpPacket:
 
 
 def main():
-    # host = "gaia.cs.umass.edu"
-    host = '209.233.126.254'
+    host = "gaia.cs.umass.edu"
+    # host = '209.233.126.254'
     # host = 'google.com'
     hostIP = ''
     icmpPacket = IcmpPacket()
